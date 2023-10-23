@@ -21,12 +21,12 @@ and multiple teams deploy their DAGs from separate repos.
 ## Installation
 
 1) Install `gitpython` in your Airflow webserver
-2) Copy `multirepo-deploy-plugin` to Airflow plugins folder
+2) Clone this repo inside Airflow plugins folder
 3) Configure your webserver to enable `git pull` on your DAGs repo (ssh keys, etc.)
 
 ## Usage
 
-Clone your repos to the airflow DAGs folder.
+Clone your dag repos to the airflow DAGs folder.
 
 ### Airflow helm chart
 
