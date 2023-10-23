@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +27,7 @@ class RepoMeta:
     committed_date: int
     local_branches: list
     remote_branches: list
+    repo: Repo
 
     @classmethod
     def from_repo(cls, repo: Repo, folder: str):
@@ -59,6 +59,7 @@ class RepoMeta:
             remote_branches=[
                 ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name
             ],
+            repo=repo,
         )
 
     @property
@@ -71,10 +72,9 @@ class RepoMeta:
 
 
 class DeploymentView(BaseView):
-    plugins_folder = conf.get("core", "plugins_folder")
     dags_folder = conf.get("core", "dags_folder")
 
-    template_folder = os.path.join(plugins_folder, "multirepo-deploy-plugin")
+    template_folder = Path(__file__).resolve().parent.joinpath("templates")
     route_base = "/deployment"
 
     def render(self, template, **context):
@@ -110,40 +110,52 @@ class DeploymentView(BaseView):
     @has_access
     @action_logging
     def status(self, folder):
-        repo = self._load_repo(os.path.join(self.dags_folder, folder), folder)
+        repo_meta = self._load_repo(Path(self.dags_folder).joinpath(folder), folder)
 
-        if not repo:
+        if not repo_meta:
             flash(f"Folder {folder} is not a git repository", "error")
             return redirect("/deployment/repos")
 
+        for rem in repo_meta.repo.remotes:
+            try:
+                rem.fetch(prune=True)
+            except GitCommandError as gexc:
+                flash(str(gexc), "error")
 
-        allowed_branches = conf.get("multirepo_deploy", "allowed_branches", fallback=None)
-        if allowed_branches:
-            branch_choices = [
-                (brn, brn) for brn in repo.remote_branches if brn in allowed_branches.split(",")
+        allowed_branches = conf.get(
+            "multirepo_deploy", "allowed_branches", fallback=None
+        )
+        branch_choices = (
+            [
+                (brn, brn)
+                for brn in repo_meta.remote_branches
+                if brn in allowed_branches.split(",")
             ]
-        else:
-            branch_choices = [(brn, brn) for brn in repo.remote_branches]
+            if allowed_branches
+            else [(brn, brn) for brn in repo_meta.remote_branches]
+        )
 
         form = GitBranchForm()
         form.branches.choices = branch_choices
 
-        return self.render_template("deploy.html", repo=repo, form=form)
+        return self.render_template("deploy.html", repo=repo_meta, form=form)
 
     @expose("/deploy/<path:folder>", methods=["POST"])
     @has_access
     @action_logging
     def deploy(self, folder):
-        repo = Repo(path=os.path.join(self.dags_folder, folder))
+        repo = Repo(path=Path(self.dags_folder).joinpath(folder))
 
         new_branch = request.form.get("branches")
         new_local_branch = new_branch.split("/")[-1]
 
-        git_identity_file = os.path.join(self.dags_folder, f"{folder}.key")
-        git_env = {}
+        git_identity_file = Path(self.dags_folder).joinpath(f"{folder}.key")
 
-        if os.path.exists(git_identity_file) and os.path.isfile(git_identity_file):
-            git_env = {"GIT_SSH_COMMAND": f"ssh -i {git_identity_file}"}
+        git_env = (
+            {"GIT_SSH_COMMAND": f"ssh -i {git_identity_file}"}
+            if Path(git_identity_file).exists()
+            else {}
+        )
 
         try:
             repo.git.checkout(new_local_branch, env=git_env)
