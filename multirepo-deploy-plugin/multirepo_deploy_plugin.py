@@ -118,7 +118,7 @@ class DeploymentView(BaseView):
 
         for rem in repo_meta.repo.remotes:
             try:
-                rem.fetch(prune=True)
+                rem.fetch(prune=True, env=self._git_env(folder))
             except GitCommandError as gexc:
                 flash(str(gexc), "error")
 
@@ -149,13 +149,7 @@ class DeploymentView(BaseView):
         new_branch = request.form.get("branches")
         new_local_branch = new_branch.split("/")[-1]
 
-        git_identity_file = Path(self.dags_folder).joinpath(f"{folder}.key")
-
-        git_env = (
-            {"GIT_SSH_COMMAND": f"ssh -i {git_identity_file}"}
-            if Path(git_identity_file).exists()
-            else {}
-        )
+        git_env = self._git_env(folder)
 
         try:
             repo.git.checkout(new_local_branch, env=git_env)
@@ -167,6 +161,15 @@ class DeploymentView(BaseView):
         except GitCommandError as gexc:
             flash(str(gexc), "error")
         return redirect("/deployment/repos")
+
+    def _git_env(self, folder: str) -> dict:
+        git_identity_file = Path(self.dags_folder).joinpath(f"{folder}.key")
+
+        return (
+            {"GIT_SSH_COMMAND": f"ssh -i {git_identity_file}"}
+            if Path(git_identity_file).exists()
+            else {}
+        )
 
 
 deployment_view = DeploymentView()
