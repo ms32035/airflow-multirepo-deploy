@@ -147,13 +147,13 @@ class DeploymentView(BaseView):
         repo = Repo(path=Path(self.dags_folder).joinpath(folder))
 
         new_branch = request.form.get("branches")
-        new_local_branch = new_branch.split("/")[-1]
+        new_local_branch = "/".join(new_branch.split("/")[1:])
 
         git_env = self._git_env(folder)
 
         try:
             repo.git.checkout(new_local_branch, env=git_env)
-            repo.git.pull(env=git_env)
+            repo.git.pull(f"refs/heads/{new_local_branch}:refs/heads/{new_local_branch}", env=git_env)
             if new_local_branch == repo.active_branch.name:
                 flash(f"Successfully updated branch: {new_local_branch}")
             else:
