@@ -153,11 +153,11 @@ class DeploymentView(BaseView):
 
         try:
             repo.git.checkout(new_local_branch, env=git_env)
-            repo.git.pull(f"refs/heads/{new_local_branch}:refs/heads/{new_local_branch}", env=git_env)
+            result = repo.git.pull("origin", new_local_branch, env=git_env)
             if new_local_branch == repo.active_branch.name:
-                flash(f"Successfully updated branch: {new_local_branch}")
+                flash(f"Successfully updated branch: {new_local_branch}\n{result}")
             else:
-                flash(f"Successfully changed to branch: {new_local_branch}")
+                flash(f"Successfully changed to branch: {new_local_branch}\n{result}")
         except GitCommandError as gexc:
             flash(str(gexc), "error")
         return redirect("/deployment/repos")
