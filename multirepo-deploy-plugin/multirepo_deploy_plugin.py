@@ -1,3 +1,4 @@
+import importlib
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,11 +72,21 @@ class RepoMeta:
         )
 
 
+def get_post_hook():
+    callable_name = conf.get("multirepo_deploy", "post_hook", fallback=None)
+    if not callable_name:
+        return None
+    module_name, callable_name = callable_name.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, callable_name)
+
+
 class DeploymentView(BaseView):
     dags_folder = conf.get("core", "dags_folder")
 
     template_folder = Path(__file__).resolve().parent.joinpath("templates")
     route_base = "/deployment"
+    post_hook = get_post_hook()
 
     def render(self, template, **context):
         return render_template(
@@ -160,6 +171,14 @@ class DeploymentView(BaseView):
                 flash(f"Successfully changed to branch: {new_local_branch}\n{result}")
         except GitCommandError as gexc:
             flash(str(gexc), "error")
+
+        if DeploymentView.post_hook:
+            try:
+                res = DeploymentView.post_hook(Path(self.dags_folder).joinpath(folder))
+                flash(f"Successfully ran post hook: {res}")
+            except Exception as e:
+                flash(f"Failed to run post hook: {e}", "error")
+
         return redirect("/deployment/repos")
 
     def _git_env(self, folder: str) -> dict:
