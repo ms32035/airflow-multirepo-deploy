@@ -148,6 +148,7 @@ class DeploymentView(BaseView):
 
         form = GitBranchForm()
         form.branches.choices = branch_choices
+        form.branches.default = f"origin/{repo_meta.active_branch}"
 
         return self.render_template("deploy.html", repo=repo_meta, form=form)
 
@@ -205,4 +206,4 @@ class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
 
 
 class GitBranchForm(FlaskForm):
-    branches = SelectField("Git branch", default="origin/main")
+    branches = SelectField("Git branch")
