@@ -148,7 +148,7 @@ class DeploymentView(BaseView):
 
         form = GitBranchForm()
         form.branches.choices = branch_choices
-        form.branches.default = f"origin/{repo_meta.active_branch}"
+        form.branches.data = f"origin/{repo_meta.active_branch}"
 
         return self.render_template("deploy.html", repo=repo_meta, form=form)
 
@@ -165,7 +165,8 @@ class DeploymentView(BaseView):
 
         try:
             repo.git.checkout(new_local_branch, env=git_env)
-            result = repo.git.pull("origin", new_local_branch, env=git_env)
+            repo.remotes.origin.fetch(env=git_env)
+            result = repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
             if new_local_branch == repo.active_branch.name:
                 flash(f"Successfully updated branch: {new_local_branch}\n{result}")
             else:
