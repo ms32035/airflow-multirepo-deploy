@@ -6,10 +6,12 @@ from pathlib import Path
 from airflow.configuration import conf
 from airflow.plugins_manager import AirflowPlugin
 from airflow.www.decorators import action_logging
+from airflow.www import auth
+from airflow.security import permissions
 
 
 from flask import render_template, flash, redirect, request
-from flask_appbuilder import BaseView, has_access, expose
+from flask_appbuilder import BaseView, expose
 from flask_wtf import FlaskForm
 from git import Repo
 from git.exc import InvalidGitRepositoryError
@@ -105,7 +107,7 @@ class DeploymentView(BaseView):
             return False
 
     @expose("/repos")
-    @has_access
+    @auth.has_access(((permissions.ACTION_CAN_READ, permissions.RESOURCE_VARIABLE),))
     @action_logging
     def list(self):
         repos = list()
@@ -118,7 +120,7 @@ class DeploymentView(BaseView):
         return self.render_template("repos.html", repos=repos)
 
     @expose("/status/<path:folder>")
-    @has_access
+    @auth.has_access(((permissions.ACTION_CAN_READ, permissions.RESOURCE_CONNECTION),))
     @action_logging
     def status(self, folder):
         repo_meta = self._load_repo(Path(self.dags_folder).joinpath(folder), folder)
@@ -153,7 +155,7 @@ class DeploymentView(BaseView):
         return self.render_template("deploy.html", repo=repo_meta, form=form)
 
     @expose("/deploy/<path:folder>", methods=["POST"])
-    @has_access
+    @auth.has_access(((permissions.ACTION_CAN_EDIT, permissions.RESOURCE_CONNECTION),))
     @action_logging
     def deploy(self, folder):
         repo = Repo(path=Path(self.dags_folder).joinpath(folder))
