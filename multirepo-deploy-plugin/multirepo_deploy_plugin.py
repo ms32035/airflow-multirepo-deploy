@@ -50,6 +50,15 @@ class RepoMeta:
             author = None
             committed_date = None
 
+        if not repo.remotes:
+            remote_branches = []
+        elif "origin" in [rem.name for rem in repo.remotes]:
+            remote_branches = [
+                ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name
+            ]
+        else:
+            remote_branches = []
+
         return cls(
             folder=folder,
             remotes=[(rem.name, rem.url) for rem in repo.remotes],
@@ -59,9 +68,7 @@ class RepoMeta:
             author=author,
             committed_date=committed_date,
             local_branches=[brn.name for brn in repo.branches],
-            remote_branches=[
-                ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name
-            ],
+            remote_branches=remote_branches,
             repo=repo,
         )
 
