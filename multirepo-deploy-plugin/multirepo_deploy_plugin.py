@@ -99,7 +99,7 @@ post_hook = get_post_hook()
 app = FastAPI()
 
 
-@app.get("/repos", response_class=HTMLResponse)
+@app.get("", response_class=HTMLResponse)
 async def list_repos(request: Request):
     repos = []
     for f in Path(dags_folder).iterdir():
@@ -114,7 +114,7 @@ async def list_repos(request: Request):
 async def repo_status(request: Request, folder: str):
     repo_meta = _load_repo(Path(dags_folder).joinpath(folder), folder)
     if not repo_meta:
-        return RedirectResponse("/deployment/repos")
+        return RedirectResponse("")
     allowed_branches = conf.get("multirepo_deploy", "allowed_branches", fallback=None)
     if allowed_branches:
         branch_choices = [brn for brn in repo_meta.remote_branches if brn in allowed_branches.split(",")]
@@ -149,7 +149,7 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
             post_hook(Path(dags_folder).joinpath(folder))
         except Exception:
             pass
-    return RedirectResponse("/deployment/repos", status_code=303)
+    return RedirectResponse("", status_code=303)
 
 
 class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
