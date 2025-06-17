@@ -1,22 +1,16 @@
 import importlib
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from git import GitCommandError, Repo
+from git.exc import InvalidGitRepositoryError
 
 from airflow.configuration import conf
 from airflow.plugins_manager import AirflowPlugin
-from airflow.www.decorators import action_logging
-from airflow.www import auth
-from airflow.security import permissions
-
-
-from flask import render_template, flash, redirect, request
-from flask_appbuilder import BaseView, expose
-from flask_wtf import FlaskForm
-from git import Repo
-from git.exc import InvalidGitRepositoryError
-from git.cmd import GitCommandError
-from wtforms.fields import SelectField
 
 
 @dataclass
@@ -53,9 +47,7 @@ class RepoMeta:
         if not repo.remotes:
             remote_branches = []
         elif "origin" in [rem.name for rem in repo.remotes]:
-            remote_branches = [
-                ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name
-            ]
+            remote_branches = [ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name]
         else:
             remote_branches = []
 
@@ -75,9 +67,7 @@ class RepoMeta:
     @property
     def committed_date_str(self):
         return (
-            datetime.fromtimestamp(self.committed_date).strftime("%Y-%m-%d %H:%M:%S")
-            if self.committed_date
-            else None
+            datetime.fromtimestamp(self.committed_date).strftime("%Y-%m-%d %H:%M:%S") if self.committed_date else None
         )
 
 
@@ -90,130 +80,78 @@ def get_post_hook():
     return getattr(module, callable_name)
 
 
-class DeploymentView(BaseView):
-    dags_folder = conf.get("core", "dags_folder")
+def _git_env(dags_folder, folder: str) -> dict:
+    git_identity_file = Path(dags_folder).joinpath(f"{folder}.key")
+    return {"GIT_SSH_COMMAND": f"ssh -i {git_identity_file}"} if Path(git_identity_file).exists() else {}
 
-    template_folder = Path(__file__).resolve().parent.joinpath("templates")
-    route_base = "/deployment"
-    post_hook = get_post_hook()
 
-    def render(self, template, **context):
-        return render_template(
-            template,
-            base_template=self.appbuilder.base_template,
-            appbuilder=self.appbuilder,
-            **context,
-        )
+def _load_repo(path, folder) -> RepoMeta | bool:
+    try:
+        return RepoMeta.from_repo(Repo(path), folder)
+    except InvalidGitRepositoryError:
+        return False
 
-    @staticmethod
-    def _load_repo(path, folder) -> RepoMeta | bool:
+
+dags_folder = conf.get("core", "dags_folder")
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+post_hook = get_post_hook()
+
+app = FastAPI()
+
+
+@app.get("", response_class=HTMLResponse)
+async def list_repos(request: Request):
+    repos = []
+    for f in Path(dags_folder).iterdir():
+        if f.is_dir() and f.name != ".git":
+            repo = _load_repo(f, f.name)
+            if repo:
+                repos.append(repo)
+    return templates.TemplateResponse("repos.html", {"request": request, "repos": repos, "title": "Repos"})
+
+
+@app.get("/status/{folder:path}", response_class=HTMLResponse)
+async def repo_status(request: Request, folder: str):
+    repo_meta = _load_repo(Path(dags_folder).joinpath(folder), folder)
+    if not repo_meta:
+        return RedirectResponse("")
+    allowed_branches = conf.get("multirepo_deploy", "allowed_branches", fallback=None)
+    if allowed_branches:
+        branch_choices = [brn for brn in repo_meta.remote_branches if brn in allowed_branches.split(",")]
+    else:
+        branch_choices = repo_meta.remote_branches
+    selected_branch = f"origin/{repo_meta.active_branch}"
+    return templates.TemplateResponse(
+        "deploy.html",
+        {
+            "request": request,
+            "repo": repo_meta,
+            "form": {"branches": branch_choices, "selected": selected_branch},
+            "title": f"Status: {folder}",
+        },
+    )
+
+
+@app.post("/deploy/{folder:path}")
+async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
+    repo = Repo(path=Path(dags_folder).joinpath(folder))
+    new_branch = branches
+    new_local_branch = "/".join(new_branch.split("/")[1:])
+    git_env = _git_env(dags_folder, folder)
+    try:
+        repo.git.checkout(new_local_branch, env=git_env)
+        repo.remotes.origin.fetch(env=git_env)
+        repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
+    except GitCommandError:
+        pass
+    if post_hook:
         try:
-            return RepoMeta.from_repo(Repo(path), folder)
-
-        except InvalidGitRepositoryError:
-            return False
-
-    @expose("/repos")
-    @auth.has_access(((permissions.ACTION_CAN_READ, permissions.RESOURCE_VARIABLE),))
-    @action_logging
-    def list(self):
-        repos = list()
-
-        for f in Path(self.dags_folder).iterdir():
-            if f.is_dir() and f.name != ".git":
-                if repo := self._load_repo(f, f.name):
-                    repos.append(repo)
-
-        return self.render_template("repos.html", repos=repos)
-
-    @expose("/status/<path:folder>")
-    @auth.has_access(((permissions.ACTION_CAN_READ, permissions.RESOURCE_CONNECTION),))
-    @action_logging
-    def status(self, folder):
-        repo_meta = self._load_repo(Path(self.dags_folder).joinpath(folder), folder)
-
-        if not repo_meta:
-            flash(f"Folder {folder} is not a git repository", "error")
-            return redirect("/deployment/repos")
-
-        for rem in repo_meta.repo.remotes:
-            try:
-                rem.fetch(prune=True, env=self._git_env(folder))
-            except GitCommandError as gexc:
-                flash(str(gexc), "error")
-
-        allowed_branches = conf.get(
-            "multirepo_deploy", "allowed_branches", fallback=None
-        )
-        branch_choices = (
-            [
-                (brn, brn)
-                for brn in repo_meta.remote_branches
-                if brn in allowed_branches.split(",")
-            ]
-            if allowed_branches
-            else [(brn, brn) for brn in repo_meta.remote_branches]
-        )
-
-        form = GitBranchForm()
-        form.branches.choices = branch_choices
-        form.branches.data = f"origin/{repo_meta.active_branch}"
-
-        return self.render_template("deploy.html", repo=repo_meta, form=form)
-
-    @expose("/deploy/<path:folder>", methods=["POST"])
-    @auth.has_access(((permissions.ACTION_CAN_EDIT, permissions.RESOURCE_CONNECTION),))
-    @action_logging
-    def deploy(self, folder):
-        repo = Repo(path=Path(self.dags_folder).joinpath(folder))
-
-        new_branch = request.form.get("branches")
-        new_local_branch = "/".join(new_branch.split("/")[1:])
-
-        git_env = self._git_env(folder)
-
-        try:
-            repo.git.checkout(new_local_branch, env=git_env)
-            repo.remotes.origin.fetch(env=git_env)
-            result = repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
-            if new_local_branch == repo.active_branch.name:
-                flash(f"Successfully updated branch: {new_local_branch}\n{result}")
-            else:
-                flash(f"Successfully changed to branch: {new_local_branch}\n{result}")
-        except GitCommandError as gexc:
-            flash(str(gexc), "error")
-
-        if DeploymentView.post_hook:
-            try:
-                res = DeploymentView.post_hook(Path(self.dags_folder).joinpath(folder))
-                flash(f"Successfully ran post hook: {res}")
-            except Exception as e:
-                flash(f"Failed to run post hook: {e}", "error")
-
-        return redirect("/deployment/repos")
-
-    def _git_env(self, folder: str) -> dict:
-        git_identity_file = Path(self.dags_folder).joinpath(f"{folder}.key")
-
-        return (
-            {"GIT_SSH_COMMAND": f"ssh -i {git_identity_file}"}
-            if Path(git_identity_file).exists()
-            else {}
-        )
-
-
-deployment_view = DeploymentView()
-appbuilder_package = {
-    "name": "Deployment",
-    "category": "Admin",
-    "view": deployment_view,
-}
+            post_hook(Path(dags_folder).joinpath(folder))
+        except Exception:
+            pass
+    return RedirectResponse("", status_code=303)
 
 
 class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
     name = "multirepo_deploy_plugin"
-    appbuilder_views = [appbuilder_package]
-
-
-class GitBranchForm(FlaskForm):
-    branches = SelectField("Git branch")
+    fastapi_apps = [{"app": app, "url_prefix": "/deployment", "name": "MultiRepo Deployment"}]
