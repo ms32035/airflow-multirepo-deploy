@@ -99,7 +99,7 @@ post_hook = get_post_hook()
 app = FastAPI()
 
 
-@app.get("", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 async def list_repos(request: Request):
     repos = []
     for f in Path(dags_folder).iterdir():
