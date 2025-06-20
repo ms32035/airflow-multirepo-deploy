@@ -9,6 +9,15 @@
 <body>
 
 <div class="container-fluid mt-4">
+  {% if errors %}
+    <div class="alert alert-danger" role="alert">
+      <h5 class="alert-heading">Errors occurred:</h5>
+      {% for error in errors %}
+        <p class="mb-1">{{ error }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   <div class="card shadow-sm">
     <div class="card-header bg-primary text-white">
       <h2 class="mb-0">{{ repo.folder }}</h2>

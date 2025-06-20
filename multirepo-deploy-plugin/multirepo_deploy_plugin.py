@@ -2,6 +2,7 @@ import importlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -111,16 +112,28 @@ async def list_repos(request: Request):
 
 
 @app.get("/status/{folder:path}", response_class=HTMLResponse)
-async def repo_status(request: Request, folder: str):
+async def repo_status(request: Request, folder: str, error: str | None = None):
     repo_meta = _load_repo(Path(dags_folder).joinpath(folder), folder)
     if not repo_meta:
-        return RedirectResponse("")
+        return RedirectResponse("/deployment")
+
+    git_env = _git_env(dags_folder, folder)
+    errors = []
+    if error:
+        errors.append(error)
+    for rem in repo_meta.repo.remotes:
+        try:
+            rem.fetch(prune=True, env=git_env)
+        except GitCommandError as gexc:
+            errors.append(str(gexc))
+
     allowed_branches = conf.get("multirepo_deploy", "allowed_branches", fallback=None)
     if allowed_branches:
         branch_choices = [brn for brn in repo_meta.remote_branches if brn in allowed_branches.split(",")]
     else:
         branch_choices = repo_meta.remote_branches
     selected_branch = f"origin/{repo_meta.active_branch}"
+
     return templates.TemplateResponse(
         "deploy.html",
         {
@@ -128,6 +141,7 @@ async def repo_status(request: Request, folder: str):
             "repo": repo_meta,
             "form": {"branches": branch_choices, "selected": selected_branch},
             "title": f"Status: {folder}",
+            "errors": errors,
         },
     )
 
@@ -142,14 +156,12 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
         repo.git.checkout(new_local_branch, env=git_env)
         repo.remotes.origin.fetch(env=git_env)
         repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
-    except GitCommandError:
-        pass
-    if post_hook:
-        try:
+        if post_hook:
             post_hook(Path(dags_folder).joinpath(folder))
-        except Exception:
-            pass
-    return RedirectResponse("", status_code=303)
+    except (GitCommandError, Exception) as exc:
+        error_message = quote(str(exc))
+        return RedirectResponse(f"/deployment/status/{folder}?error={error_message}", status_code=303)
+    return RedirectResponse(f"/deployment/status/{folder}", status_code=303)
 
 
 class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
