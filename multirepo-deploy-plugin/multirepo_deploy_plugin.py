@@ -112,10 +112,14 @@ async def list_repos(request: Request):
 
 
 @app.get("/status/{folder:path}", response_class=HTMLResponse)
-async def repo_status(request: Request, folder: str, error: str | None = None):
+async def repo_status(request: Request, folder: str, error: str | None = None, deploy: str | None = None):
     repo_meta = _load_repo(Path(dags_folder).joinpath(folder), folder)
     if not repo_meta:
         return RedirectResponse("/deployment")
+
+    successes = []
+    if deploy == "success":
+        successes.append("Deployment successful")
 
     git_env = _git_env(dags_folder, folder)
     errors = []
@@ -142,6 +146,7 @@ async def repo_status(request: Request, folder: str, error: str | None = None):
             "form": {"branches": branch_choices, "selected": selected_branch},
             "title": f"Status: {folder}",
             "errors": errors,
+            "successes": successes,
         },
     )
 
@@ -161,7 +166,7 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
     except (GitCommandError, Exception) as exc:
         error_message = quote(str(exc))
         return RedirectResponse(f"/deployment/status/{folder}?error={error_message}", status_code=303)
-    return RedirectResponse(f"/deployment/status/{folder}", status_code=303)
+    return RedirectResponse(f"/deployment/status/{folder}?deploy=success", status_code=303)
 
 
 class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
