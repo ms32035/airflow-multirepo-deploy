@@ -9,11 +9,9 @@
 <body>
 
 <div class="container-fluid mt-4">
-  {% if successes %}
+  {% if success %}
     <div class="alert alert-success" role="alert">
-      {% for success in successes %}
-        <p class="mb-1">{{ success }}</p>
-      {% endfor %}
+      <p class="mb-1">{{ success }}</p>
     </div>
   {% endif %}
   {% if errors %}
