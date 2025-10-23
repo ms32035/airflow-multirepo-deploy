@@ -1,17 +1,19 @@
 import importlib
+import mimetypes
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
-
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from git import GitCommandError, Repo
-from git.exc import InvalidGitRepositoryError
 
 from airflow.configuration import conf
 from airflow.plugins_manager import AirflowPlugin
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import JSONResponse
+from git import GitCommandError, Repo
+from git.exc import InvalidGitRepositoryError
+from starlette.staticfiles import StaticFiles
+
+mimetypes.add_type("application/javascript", ".cjs")
 
 
 @dataclass
@@ -94,61 +96,81 @@ def _load_repo(path, folder) -> RepoMeta | bool:
 
 
 dags_folder = conf.get("core", "dags_folder")
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+REACT_APP_DIR = conf.get("multirepo_deploy", "react_app_dir", fallback=Path(__file__).parent / "ui" / "dist")
+URL_PREFIX = conf.get("multirepo_deploy", "url_prefix", fallback="deployment")
 post_hook = get_post_hook()
 
 app = FastAPI()
+app.mount(
+    "/multirepo-deploy-ui",
+    StaticFiles(directory=REACT_APP_DIR, html=True),
+    name="multirepo-deploy-ui",
+)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def list_repos(request: Request):
+@app.get("/api/repos", response_class=JSONResponse)
+async def list_repos_api():
     repos = []
     for f in Path(dags_folder).iterdir():
         if f.is_dir() and f.name != ".git":
             repo = _load_repo(f, f.name)
             if repo:
-                repos.append(repo)
-    return templates.TemplateResponse("repos.html", {"request": request, "repos": repos, "title": "Repos"})
+                repos.append(
+                    {
+                        "folder": repo.folder,
+                        "active_branch": repo.active_branch,
+                        "committed_date_str": repo.committed_date_str,
+                        "sha": repo.sha,
+                        "author": repo.author,
+                        "commit_message": repo.commit_message,
+                        "remotes": repo.remotes,
+                        "local_branches": repo.local_branches,
+                        "remote_branches": repo.remote_branches,
+                    }
+                )
+    return {"repos": repos}
 
 
-@app.get("/status/{folder:path}", response_class=HTMLResponse)
-async def repo_status(request: Request, folder: str, error: str | None = None, success: str | None = None):
+@app.get("/api/status/{folder:path}", response_class=JSONResponse)
+async def repo_status_api(folder: str):
     repo_meta = _load_repo(Path(dags_folder).joinpath(folder), folder)
     if not repo_meta:
-        return RedirectResponse("/deployment")
-
-    success_message = None
-    if success:
-        success_message = "Deployment successful"
+        return JSONResponse({"error": "Repository not found"}, status_code=404)
 
     git_env = _git_env(dags_folder, folder)
     errors = []
-    if error:
-        errors.append(error)
+
+    # Fetch remote changes
     for rem in repo_meta.repo.remotes:
         try:
             rem.fetch(prune=True, env=git_env)
         except GitCommandError as gexc:
             errors.append(str(gexc))
 
+    # Get allowed branches
     allowed_branches = conf.get("multirepo_deploy", "allowed_branches", fallback=None)
     if allowed_branches:
         branch_choices = [brn for brn in repo_meta.remote_branches if brn in allowed_branches.split(",")]
     else:
         branch_choices = repo_meta.remote_branches
-    selected_branch = f"origin/{repo_meta.active_branch}"
 
-    return templates.TemplateResponse(
-        "deploy.html",
-        {
-            "request": request,
-            "repo": repo_meta,
-            "form": {"branches": branch_choices, "selected": selected_branch},
-            "title": f"Status: {folder}",
-            "errors": errors,
-            "success": success_message,
+    selected_branch = f"origin/{repo_meta.active_branch}" if repo_meta.active_branch else ""
+
+    return {
+        "repo": {
+            "folder": repo_meta.folder,
+            "active_branch": repo_meta.active_branch,
+            "committed_date_str": repo_meta.committed_date_str,
+            "sha": repo_meta.sha,
+            "author": repo_meta.author,
+            "commit_message": repo_meta.commit_message,
+            "remotes": repo_meta.remotes,
+            "local_branches": repo_meta.local_branches,
+            "remote_branches": repo_meta.remote_branches,
         },
-    )
+        "form": {"branches": branch_choices, "selected": selected_branch},
+        "errors": errors if errors else None,
+    }
 
 
 @app.post("/deploy/{folder:path}")
@@ -157,6 +179,7 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
     new_branch = branches
     new_local_branch = "/".join(new_branch.split("/")[1:])
     git_env = _git_env(dags_folder, folder)
+
     try:
         repo.git.checkout(new_local_branch, env=git_env)
         repo.remotes.origin.fetch(env=git_env)
@@ -164,11 +187,21 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
         if post_hook:
             post_hook(Path(dags_folder).joinpath(folder))
     except (GitCommandError, Exception) as exc:
-        error_message = quote(str(exc))
-        return RedirectResponse(f"/deployment/status/{folder}?error={error_message}", status_code=303)
-    return RedirectResponse(f"/deployment/status/{folder}?success=true", status_code=303)
+        error_message = traceback.format_exception(exc)
+
+        return JSONResponse({"error": error_message}, status_code=400)
+
+    return JSONResponse({"success": "Deployment successful"})
 
 
 class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
     name = "multirepo_deploy_plugin"
-    fastapi_apps = [{"app": app, "url_prefix": "/deployment", "name": "MultiRepo Deployment"}]
+    fastapi_apps = [{"app": app, "url_prefix": f"/{URL_PREFIX}", "name": "MultiRepo Deployment"}]
+    react_apps = [
+        {
+            "name": "Deployments",
+            "url_route": URL_PREFIX,
+            "bundle_url": f"/{URL_PREFIX}/multirepo-deploy-ui/main.umd.cjs",
+            "destination": "nav",
+        }
+    ]
