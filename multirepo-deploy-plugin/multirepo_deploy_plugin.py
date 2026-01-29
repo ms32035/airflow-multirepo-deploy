@@ -98,7 +98,7 @@ def _load_repo(path, folder) -> RepoMeta | bool:
 dags_folder = conf.get("core", "dags_folder")
 REACT_APP_DIR = conf.get("multirepo_deploy", "react_app_dir", fallback=Path(__file__).parent / "ui" / "dist")
 URL_PREFIX = conf.get("multirepo_deploy", "url_prefix", fallback="deployment")
-post_hook = get_post_hook()
+
 
 app = FastAPI()
 app.mount(
@@ -184,6 +184,7 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
         repo.git.checkout(new_local_branch, env=git_env)
         repo.remotes.origin.fetch(env=git_env)
         repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
+        post_hook = get_post_hook()
         if post_hook:
             post_hook(Path(dags_folder).joinpath(folder))
     except (GitCommandError, Exception) as exc:
