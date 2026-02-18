@@ -1,6 +1,7 @@
 import { Box, Button, Heading, Text, VStack, Spinner, Code } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 
+import { AddRepoModal } from "src/components/AddRepoModal";
 import { useColorMode } from "src/context/colorMode";
 
 // Simple search icon using Unicode
@@ -31,23 +32,25 @@ export const RepoList = () => {
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAddRepoModalOpen, setIsAddRepoModalOpen] = useState(false);
+
+  const fetchRepos = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/deployment/api/repos");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data: ReposResponse = await response.json();
+      setRepos(data.repos);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred while fetching repositories");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchRepos = async () => {
-      try {
-        const response = await fetch("/deployment/api/repos");
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data: ReposResponse = await response.json();
-        setRepos(data.repos);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred while fetching repositories");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRepos();
   }, []);
 
@@ -94,13 +97,22 @@ export const RepoList = () => {
           <Heading size="xl" color="fg">
             Repositories
           </Heading>
-          <Button
-            onClick={() => setColorMode(colorMode === "dark" ? "light" : "dark")}
-            size="sm"
-            variant="outline"
-          >
-            Toggle Theme
-          </Button>
+          <Box display="flex" gap={2}>
+            <Button
+              onClick={() => setIsAddRepoModalOpen(true)}
+              colorPalette="brand"
+              size="sm"
+            >
+              + Add Repository
+            </Button>
+            <Button
+              onClick={() => setColorMode(colorMode === "dark" ? "light" : "dark")}
+              size="sm"
+              variant="outline"
+            >
+              Toggle Theme
+            </Button>
+          </Box>
         </Box>
 
         {repos.length === 0 ? (
@@ -225,6 +237,12 @@ export const RepoList = () => {
           </Box>
         )}
       </VStack>
+
+      <AddRepoModal
+        isOpen={isAddRepoModalOpen}
+        onClose={() => setIsAddRepoModalOpen(false)}
+        onSuccess={fetchRepos}
+      />
     </Box>
   );
 };
