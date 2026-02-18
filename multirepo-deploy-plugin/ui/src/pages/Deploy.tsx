@@ -54,6 +54,8 @@ export const Deploy = () => {
   const [deployResponse, setDeployResponse] = useState<DeployResponse | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
   const [deploying, setDeploying] = useState(false);
+  const [cleanupResponse, setCleanupResponse] = useState<{ success?: boolean; message?: string; error?: string } | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   // Get folder from URL hash
   const folder = window.location.hash.match(/#\/status\/(.+)$/)?.[1] || "";
@@ -132,6 +134,46 @@ export const Deploy = () => {
     }
   };
 
+  const handleCleanupBranches = async () => {
+    if (!folder) return;
+
+    setCleaningUp(true);
+    setCleanupResponse(null);
+
+    try {
+      const response = await fetch(`/deployment/api/cleanup-branches/${folder}`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const deletedCount = result.deleted_branches?.length || 0;
+        setCleanupResponse({
+          success: true,
+          message: `Successfully deleted ${deletedCount} branch${deletedCount !== 1 ? "es" : ""}. Active branch: ${result.active_branch}`,
+        });
+        // Refresh the page data to show updated branch list
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        const result = await response.json();
+        setCleanupResponse({
+          error: result.error || "Failed to cleanup branches",
+        });
+      }
+    } catch (err) {
+      setCleanupResponse({
+        error: err instanceof Error ? err.message : "An error occurred during branch cleanup",
+      });
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
   if (loading) {
     return (
       <Box p={8} bg="bg.subtle" flexGrow={1} height="100%">
@@ -175,7 +217,21 @@ export const Deploy = () => {
             <Heading size="xl" color="fg">
               {repo.folder}
             </Heading>
-          </HStack>
+
+
+        {/* Cleanup Messages */}
+        {cleanupResponse?.success && cleanupResponse?.message && (
+          <Box p={4} bg="green.50" color="green.800" borderRadius="md" border="1px" borderColor="green.200">
+            <Text>{cleanupResponse.message}</Text>
+          </Box>
+        )}
+
+        {cleanupResponse?.error && (
+          <Box p={4} bg="red.50" color="red.800" borderRadius="md" border="1px" borderColor="red.200">
+            <Text fontWeight="bold">Branch cleanup failed:</Text>
+            <Text fontSize="sm" mt={1}>{cleanupResponse.error}</Text>
+          </Box>
+        )}</HStack>
           <Button
             onClick={() => setColorMode(colorMode === "dark" ? "light" : "dark")}
             size="sm"
@@ -217,6 +273,20 @@ export const Deploy = () => {
           </Box>
         )}
 
+        {/* Cleanup Messages */}
+        {cleanupResponse?.success && cleanupResponse?.message && (
+          <Box p={4} bg="green.50" color="green.800" borderRadius="md" border="1px" borderColor="green.200">
+            <Text>{cleanupResponse.message}</Text>
+          </Box>
+        )}
+
+        {cleanupResponse?.error && (
+          <Box p={4} bg="red.50" color="red.800" borderRadius="md" border="1px" borderColor="red.200">
+            <Text fontWeight="bold">Branch cleanup failed:</Text>
+            <Text fontSize="sm" mt={1}>{cleanupResponse.error}</Text>
+          </Box>
+        )}
+
         {/* Display Git fetch errors */}
         {data?.errors &&
           Array.isArray(data.errors) &&
@@ -249,6 +319,18 @@ export const Deploy = () => {
         {/* Repository Details */}
         <Box bg="bg" borderRadius="lg" border="1px" borderColor="border" overflow="hidden">
           <Box p={4}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+              <Heading size="md">Repository Details</Heading>
+              <Button
+                size="sm"
+                colorPalette="red"
+                variant="outline"
+                onClick={handleCleanupBranches}
+                disabled={cleaningUp || !data?.repo?.local_branches || data.repo.local_branches.length <= 1}
+              >
+                {cleaningUp ? "Cleaning up..." : "Cleanup Branches"}
+              </Button>
+            </Box>
             <Box as="table" w="full" borderCollapse="collapse">
               <Box as="tbody">
                 {/* Repository information table rows */}
