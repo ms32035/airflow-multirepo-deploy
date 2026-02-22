@@ -22,16 +22,28 @@ from starlette.staticfiles import StaticFiles
 mimetypes.add_type("application/javascript", ".cjs")
 
 DAGS_FOLDER = conf.get("core", "dags_folder")
-REACT_APP_DIR = conf.get("multirepo_deploy", "react_app_dir", fallback=Path(__file__).parent / "ui" / "dist")
+REACT_APP_DIR = conf.get(
+    "multirepo_deploy", "react_app_dir", fallback=Path(__file__).parent / "ui" / "dist"
+)
 URL_PREFIX = conf.get("multirepo_deploy", "url_prefix", fallback="deployment")
 
 # GitHub App configuration - strip and validate
-_gh_app_private_key_b64 = conf.get("multirepo_deploy", "gh_app_private_key", fallback="").strip()
-_gh_app_installation_id = conf.get("multirepo_deploy", "gh_app_installation_id", fallback="").strip()
+_gh_app_private_key_b64 = conf.get(
+    "multirepo_deploy", "gh_app_private_key", fallback=""
+).strip()
+_gh_app_installation_id = conf.get(
+    "multirepo_deploy", "gh_app_installation_id", fallback=""
+).strip()
 
 GH_APP_ID = conf.get("multirepo_deploy", "gh_app_id", fallback="").strip()
-GH_APP_PRIVATE_KEY = base64.b64decode(_gh_app_private_key_b64).decode() if _gh_app_private_key_b64 else None
-GH_APP_INSTALLATION_ID = int(_gh_app_installation_id) if _gh_app_installation_id else None
+GH_APP_PRIVATE_KEY = (
+    base64.b64decode(_gh_app_private_key_b64).decode()
+    if _gh_app_private_key_b64
+    else None
+)
+GH_APP_INSTALLATION_ID = (
+    int(_gh_app_installation_id) if _gh_app_installation_id else None
+)
 
 
 @dataclass
@@ -68,7 +80,9 @@ class RepoMeta:
         if not repo.remotes:
             remote_branches = []
         elif "origin" in [rem.name for rem in repo.remotes]:
-            remote_branches = [ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name]
+            remote_branches = [
+                ref.name for ref in repo.remotes.origin.refs if "HEAD" not in ref.name
+            ]
         else:
             remote_branches = []
 
@@ -88,7 +102,9 @@ class RepoMeta:
     @property
     def committed_date_str(self):
         return (
-            datetime.fromtimestamp(self.committed_date).strftime("%Y-%m-%d %H:%M:%S") if self.committed_date else None
+            datetime.fromtimestamp(self.committed_date).strftime("%Y-%m-%d %H:%M:%S")
+            if self.committed_date
+            else None
         )
 
 
@@ -118,7 +134,9 @@ def _git_env(dags_folder, folder: str) -> dict:
     # SSH key stored as a file: {dags_folder}/{folder}.key
     git_identity_file = Path(dags_folder).joinpath(f"{folder}.key")
     if git_identity_file.exists():
-        env["GIT_SSH_COMMAND"] = f"ssh -i {git_identity_file} -o StrictHostKeyChecking=no"
+        env["GIT_SSH_COMMAND"] = (
+            f"ssh -i {git_identity_file} -o StrictHostKeyChecking=no"
+        )
 
     # GitHub App token via ASKPASS (works in non-interactive / containerised envs)
     github_marker = Path(dags_folder).joinpath(f"{folder}.github")
@@ -224,11 +242,17 @@ async def repo_status_api(folder: str):
     # Get allowed branches
     allowed_branches = conf.get("multirepo_deploy", "allowed_branches", fallback=None)
     if allowed_branches:
-        branch_choices = [brn for brn in repo_meta.remote_branches if brn in allowed_branches.split(",")]
+        branch_choices = [
+            brn
+            for brn in repo_meta.remote_branches
+            if brn in allowed_branches.split(",")
+        ]
     else:
         branch_choices = repo_meta.remote_branches
 
-    selected_branch = f"origin/{repo_meta.active_branch}" if repo_meta.active_branch else ""
+    selected_branch = (
+        f"origin/{repo_meta.active_branch}" if repo_meta.active_branch else ""
+    )
 
     return {
         "repo": {
@@ -286,7 +310,9 @@ def _get_github_app_token():
             missing.append("gh_app_private_key")
         if not GH_APP_INSTALLATION_ID:
             missing.append("gh_app_installation_id")
-        raise ValueError(f"GitHub App credentials not fully configured. Missing: {', '.join(missing)}")
+        raise ValueError(
+            f"GitHub App credentials not fully configured. Missing: {', '.join(missing)}"
+        )
 
     private_key = GH_APP_PRIVATE_KEY
 
@@ -307,11 +333,14 @@ def _get_github_app_token():
     }
 
     response = requests.post(
-        f"https://api.github.com/app/installations/{GH_APP_INSTALLATION_ID}/access_tokens", headers=headers
+        f"https://api.github.com/app/installations/{GH_APP_INSTALLATION_ID}/access_tokens",
+        headers=headers,
     )
 
     if response.status_code != 201:  # noqa: PLR2004
-        raise Exception(f"Failed to get installation token (status {response.status_code}): {response.text}")
+        raise Exception(
+            f"Failed to get installation token (status {response.status_code}): {response.text}"
+        )
 
     token_data = response.json()
     token = token_data["token"]
@@ -319,7 +348,9 @@ def _get_github_app_token():
 
     # Parse expiry time or default to 1 hour from now
     if expires_at_str:
-        expires_at = int(datetime.fromisoformat(expires_at_str.replace("Z", "+00:00")).timestamp())
+        expires_at = int(
+            datetime.fromisoformat(expires_at_str.replace("Z", "+00:00")).timestamp()
+        )
     else:
         expires_at = now + 3600  # 1 hour default
 
@@ -360,7 +391,10 @@ async def list_github_repos():
                     existing_repos.add(f.name)
 
         # List installation repositories with pagination
-        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.json"}
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.json",
+        }
 
         all_repos = []
         page = 1
@@ -375,7 +409,9 @@ async def list_github_repos():
 
             if response.status_code != 200:  # noqa: PLR2004
                 error_msg = f"Failed to list repositories (status {response.status_code}): {response.text}"
-                return JSONResponse({"error": error_msg}, status_code=response.status_code)
+                return JSONResponse(
+                    {"error": error_msg}, status_code=response.status_code
+                )
 
             response_data = response.json()
             repos_batch = response_data.get("repositories", [])
@@ -416,10 +452,14 @@ async def list_github_repos():
 
     except ValueError as exc:
         # Configuration error
-        return JSONResponse({"error": f"Configuration error: {str(exc)}"}, status_code=500)
+        return JSONResponse(
+            {"error": f"Configuration error: {str(exc)}"}, status_code=500
+        )
     except FileNotFoundError as exc:
         # Private key file not found
-        return JSONResponse({"error": f"Private key file error: {str(exc)}"}, status_code=500)
+        return JSONResponse(
+            {"error": f"Private key file error: {str(exc)}"}, status_code=500
+        )
     except Exception as exc:
         return JSONResponse({"error": f"Unexpected error: {str(exc)}"}, status_code=500)
 
@@ -435,7 +475,9 @@ async def add_repo_ssh(
     key_path = Path(DAGS_FOLDER).joinpath(f"{folder_name}.key")
     try:
         if folder_path.exists():
-            return JSONResponse({"error": f"Folder {folder_name} already exists"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Folder {folder_name} already exists"}, status_code=400
+            )
 
         key_content = await ssh_key.read()
         key_path.write_bytes(key_content)
@@ -444,7 +486,9 @@ async def add_repo_ssh(
         git_env = {"GIT_SSH_COMMAND": f"ssh -i {key_path} -o StrictHostKeyChecking=no"}
         Repo.clone_from(repo_url, folder_path, env=git_env)
 
-        return JSONResponse({"success": f"Repository {folder_name} cloned successfully"})
+        return JSONResponse(
+            {"success": f"Repository {folder_name} cloned successfully"}
+        )
     except GitCommandError as exc:
         if folder_path.exists():
             import shutil
@@ -464,7 +508,9 @@ async def add_repo_ssh(
 
 
 @app.post("/api/repos/add-github", response_class=JSONResponse)
-async def add_repo_github(repo_full_name: str = Form(...), folder_name: str = Form(...)):
+async def add_repo_github(
+    repo_full_name: str = Form(...), folder_name: str = Form(...)
+):
     """Add a repository using GitHub App authentication"""
     folder_path = None
     github_marker = None
@@ -474,7 +520,9 @@ async def add_repo_github(repo_full_name: str = Form(...), folder_name: str = Fo
 
         # Check if folder already exists
         if folder_path.exists():
-            return JSONResponse({"error": f"Folder {folder_name} already exists"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Folder {folder_name} already exists"}, status_code=400
+            )
 
         # Get GitHub App token and build ASKPASS env for the clone
         token = _get_github_app_token()
@@ -491,7 +539,9 @@ async def add_repo_github(repo_full_name: str = Form(...), folder_name: str = Fo
         # Create marker file so _git_env knows to use GitHub App auth for this repo
         github_marker.touch()
 
-        return JSONResponse({"success": f"Repository {folder_name} cloned successfully"})
+        return JSONResponse(
+            {"success": f"Repository {folder_name} cloned successfully"}
+        )
 
     except Exception as exc:
         # Clean up on failure
@@ -531,7 +581,9 @@ async def cleanup_branches(folder: str):
                 "errors": errors if errors else None,
             }
         else:
-            return JSONResponse({"error": "Repository is in detached HEAD state"}, status_code=400)
+            return JSONResponse(
+                {"error": "Repository is in detached HEAD state"}, status_code=400
+            )
     except InvalidGitRepositoryError:
         return JSONResponse({"error": "Not a valid git repository"}, status_code=404)
     except Exception as exc:
@@ -540,7 +592,9 @@ async def cleanup_branches(folder: str):
 
 class AirflowMultiRepoDeploymentPlugin(AirflowPlugin):
     name = "multirepo_deploy_plugin"
-    fastapi_apps = [{"app": app, "url_prefix": f"/{URL_PREFIX}", "name": "MultiRepo Deployment"}]
+    fastapi_apps = [
+        {"app": app, "url_prefix": f"/{URL_PREFIX}", "name": "MultiRepo Deployment"}
+    ]
     react_apps = [
         {
             "name": "Deployments",
