@@ -5,6 +5,7 @@ import os
 import stat
 import time
 import traceback
+from inspect import isawaitable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -284,7 +285,9 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
         repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
         post_hook = get_post_hook()
         if post_hook:
-            post_hook(Path(DAGS_FOLDER).joinpath(folder))
+            resp = post_hook(Path(DAGS_FOLDER).joinpath(folder))
+            if isawaitable(resp):
+                await resp
     except (GitCommandError, Exception) as exc:
         error_message = traceback.format_exception(exc)
 
