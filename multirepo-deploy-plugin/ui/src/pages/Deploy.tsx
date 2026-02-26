@@ -85,7 +85,10 @@ export const Deploy = () => {
         }
         const deployData: DeployPageData = await response.json();
         setData(deployData);
-        setSelectedBranch(deployData.form.selected);
+        const initialBranch = deployData.form.branches.includes(deployData.form.selected)
+          ? deployData.form.selected
+          : (deployData.form.branches[0] ?? "");
+        setSelectedBranch(initialBranch);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred while fetching repository data");
       } finally {
