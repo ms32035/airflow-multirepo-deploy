@@ -10,10 +10,10 @@ readme = "Readme.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
 dependencies = [
-    "apache-airflow>=3.0.0",
-    "GitPython>=3.1.0",
-    "PyJWT>=2.8.0",
-    "cryptography>=41.0.0",
+    "apache-airflow-core>=3.0.0",
+    "GitPython>=3.1.46",
+    "PyJWT>=2.10.1",
+    "cryptography>=45.0.0",
     "requests>=2.31.0",
 ]
 
