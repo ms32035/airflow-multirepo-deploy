@@ -1,3 +1,7 @@
 __pycache__/
 .idea/
 *.iml
+src/airflow_multirepo_deploy/ui/dist/
+src/airflow_multirepo_deploy/ui/node_modules/
+*.egg-info/
+dist/
