@@ -56,7 +56,7 @@ export const AddRepoModal = ({ isOpen, onClose, onSuccess }: AddRepoModalProps) 
           } else {
             setError(data.error || "Failed to fetch GitHub repositories");
           }
-        } catch (err) {
+        } catch {
           setError("Failed to fetch GitHub repositories");
         } finally {
           setLoadingRepos(false);
@@ -99,8 +99,8 @@ export const AddRepoModal = ({ isOpen, onClose, onSuccess }: AddRepoModalProps) 
         formData.append("ssh_key", sshKeyFile!);
 
         const response = await fetch("/deployment/api/repos/add-ssh", {
-          method: "POST",
           body: formData,
+          method: "POST",
         });
 
         if (!response.ok) {
@@ -121,8 +121,8 @@ export const AddRepoModal = ({ isOpen, onClose, onSuccess }: AddRepoModalProps) 
         formData.append("folder_name", folderName);
 
         const response = await fetch("/deployment/api/repos/add-github", {
-          method: "POST",
           body: formData,
+          method: "POST",
         });
 
         if (!response.ok) {
@@ -162,7 +162,7 @@ export const AddRepoModal = ({ isOpen, onClose, onSuccess }: AddRepoModalProps) 
     setSelectedGithubRepo(fullName);
     // Auto-populate folder name from repo name
     const repoName = fullName.split("/")[1];
-    if (!folderName) {
+    if (!folderName && repoName) {
       setFolderName(repoName);
     }
   };
@@ -303,12 +303,12 @@ export const AddRepoModal = ({ isOpen, onClose, onSuccess }: AddRepoModalProps) 
                           onChange={(e) => handleGithubRepoSelect(e.target.value)}
                           disabled={loading}
                           style={{
-                            width: "100%",
-                            padding: "8px",
-                            borderRadius: "6px",
-                            border: "1px solid var(--chakra-colors-border)",
                             backgroundColor: "var(--chakra-colors-bg)",
+                            border: "1px solid var(--chakra-colors-border)",
+                            borderRadius: "6px",
                             color: "var(--chakra-colors-fg)",
+                            padding: "8px",
+                            width: "100%",
                           }}
                         >
                           <option value="">Select a repository...</option>
