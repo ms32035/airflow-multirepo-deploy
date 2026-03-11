@@ -20,8 +20,9 @@ and multiple teams deploy their DAGs from separate repos.
 
 ## Installation
 
-1) `pip install airflow-multirepo-deploy`
-2) Configure Airflow as per documentation below
+```
+pip install apache-airflow-multirepo-deploy
+```
 
 ## Usage
 
