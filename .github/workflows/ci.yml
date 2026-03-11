@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pre-commit:
+    name: Pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: j178/prek-action@v1
+
+  lint-test-js:
+    name: Lint & Test JS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: src/airflow_multirepo_deploy/ui/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: src/airflow_multirepo_deploy/ui
+      - name: Lint
+        run: pnpm lint
+        working-directory: src/airflow_multirepo_deploy/ui
+      - name: Test
+        run: pnpm test
+        working-directory: src/airflow_multirepo_deploy/ui

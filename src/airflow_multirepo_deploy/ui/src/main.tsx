@@ -7,10 +7,6 @@ import { RepoList } from "src/pages/RepoList.tsx";
 
 import { system } from "./theme";
 
-export interface PluginComponentProps {
-  // Add any props your plugin component needs
-}
-
 /**
  * Simple router to handle different views based on URL path
  */
@@ -50,7 +46,7 @@ const Router: FC = () => {
 /**
  * Main plugin component
  */
-const PluginComponent: FC<PluginComponentProps> = () => {
+const PluginComponent: FC = () => {
   return (
     <ChakraProvider value={system}>
       <ColorModeProvider>

@@ -145,18 +145,18 @@ export const Deploy = () => {
 
     try {
       const response = await fetch(`/deployment/api/cleanup-branches/${folder}`, {
-        method: "POST",
         headers: {
           Accept: "application/json",
         },
+        method: "POST",
       });
 
       if (response.ok) {
         const result = await response.json();
         const deletedCount = result.deleted_branches?.length || 0;
         setCleanupResponse({
-          success: true,
           message: `Successfully deleted ${deletedCount} branch${deletedCount !== 1 ? "es" : ""}. Active branch: ${result.active_branch}`,
+          success: true,
         });
         // Refresh the page data to show updated branch list
         setTimeout(() => {

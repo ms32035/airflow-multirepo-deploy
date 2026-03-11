@@ -20,13 +20,11 @@ and multiple teams deploy their DAGs from separate repos.
 
 ## Installation
 
-1) Install `gitpython` in your Airflow webserver
-2) Clone this repo inside Airflow plugins folder
-3) Configure your webserver to enable `git pull` on your DAGs repo (ssh keys, etc.)
+```
+pip install apache-airflow-multirepo-deploy
+```
 
 ## Usage
-
-Clone your dag repos to the airflow DAGs folder.
 
 ### Airflow helm chart
 
@@ -76,16 +74,3 @@ While you should configure the Git authentication specific to your environment,
 the plugin supports multiple SSH keys (like GitHub deployment keys) out of the box.
 For a given repo , simply store the SSH key in a file `<repo_folder_name>.key`
 in the parent folder of the repo.
-
-### Requirements
-
-The following Python packages are quired for the plugin to work:
-```
-# Git operations
-GitPython>=3.1.0
-
-# GitHub App authentication
-PyJWT>=2.8.0
-cryptography>=41.0.0  # Required by PyJWT for RSA keys
-requests>=2.31.0
-```
