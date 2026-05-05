@@ -44,6 +44,7 @@ interface DeployPageData {
 interface DeployResponse {
   success?: string;
   errors?: string[];
+  repo?: Repository | null;
 }
 
 export const Deploy = () => {
@@ -120,6 +121,9 @@ export const Deploy = () => {
       if (response.ok) {
         const result = await response.json();
         setDeployResponse({ success: result.success || "Deployment successful!" });
+        if (result.repo && data) {
+          setData({ ...data, repo: result.repo });
+        }
       } else {
         const result = await response.json();
         // Handle both string errors and array-of-strings error format
@@ -127,6 +131,10 @@ export const Deploy = () => {
         setDeployResponse({
           errors: Array.isArray(errorData) ? [errorData.join("")] : [errorData],
         });
+        // Post hook failure: git state changed, repo is returned — refresh details
+        if (result.repo && data) {
+          setData({ ...data, repo: result.repo });
+        }
       }
     } catch (err) {
       setDeployResponse({
