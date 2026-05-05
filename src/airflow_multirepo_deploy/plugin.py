@@ -135,6 +135,20 @@ def _git_env(dags_folder, folder: str) -> dict:
     return env
 
 
+def _repo_meta_to_dict(repo_meta: RepoMeta) -> dict:
+    return {
+        "folder": repo_meta.folder,
+        "active_branch": repo_meta.active_branch,
+        "committed_date_str": repo_meta.committed_date_str,
+        "sha": repo_meta.sha,
+        "author": repo_meta.author,
+        "commit_message": repo_meta.commit_message,
+        "remotes": repo_meta.remotes,
+        "local_branches": repo_meta.local_branches,
+        "remote_branches": repo_meta.remote_branches,
+    }
+
+
 def _load_repo(path, folder) -> RepoMeta | bool:
     try:
         return RepoMeta.from_repo(Repo(path), folder)
@@ -254,22 +268,34 @@ async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
     new_branch = branches
     new_local_branch = "/".join(new_branch.split("/")[1:])
     git_env = _git_env(DAGS_FOLDER, folder)
+    folder_path = Path(DAGS_FOLDER).joinpath(folder)
 
     try:
         repo.git.checkout(new_local_branch, env=git_env)
         repo.remotes.origin.fetch(env=git_env)
         repo.git.reset("--hard", f"origin/{new_local_branch}", env=git_env)
+    except (GitCommandError, Exception) as exc:
+        # Git failed — local repo state is unchanged, no repo update needed
+        return JSONResponse({"error": traceback.format_exception(exc), "repo": None}, status_code=400)
+
+    try:
         post_hook = get_post_hook()
         if post_hook:
-            resp = post_hook(Path(DAGS_FOLDER).joinpath(folder))
+            resp = post_hook(folder_path)
             if isawaitable(resp):
                 await resp
-    except (GitCommandError, Exception) as exc:
-        error_message = traceback.format_exception(exc)
+    except Exception as exc:
+        # Post hook failed — git reset already applied, return updated repo state
+        repo_meta = _load_repo(folder_path, folder)
+        return JSONResponse(
+            {"error": traceback.format_exception(exc), "repo": _repo_meta_to_dict(repo_meta) if repo_meta else None},
+            status_code=400,
+        )
 
-        return JSONResponse({"error": error_message}, status_code=400)
-
-    return JSONResponse({"success": "Deployment successful"})
+    repo_meta = _load_repo(folder_path, folder)
+    return JSONResponse(
+        {"success": "Deployment successful", "repo": _repo_meta_to_dict(repo_meta) if repo_meta else None}
+    )
 
 
 def _get_github_app_token():
