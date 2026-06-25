@@ -12,15 +12,45 @@ from pathlib import Path
 
 import jwt
 import requests
+from airflow.api_fastapi.app import get_auth_manager
 from airflow.configuration import conf
 from airflow.plugins_manager import AirflowPlugin
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from git import GitCommandError, Repo
 from git.exc import InvalidGitRepositoryError
 from starlette.staticfiles import StaticFiles
 
 mimetypes.add_type("application/javascript", ".cjs")
+
+RESOURCE_NAME = "multirepo-deploy"
+
+
+async def _check_auth(request: Request):
+    """FastAPI dependency — delegates to the configured auth manager's
+    ``is_authorized_custom_view`` to decide whether the current user
+    may access this resource with the given HTTP method."""
+
+    # User may already be resolved by Airflow's JWTRefreshMiddleware (cookie auth)
+    user = getattr(request.state, "user", None)
+
+    if user is None:
+        # Fall back to Bearer token (header-based auth)
+        token = (request.headers.get("Authorization", "")).removeprefix("Bearer ")
+        if not token:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        try:
+            user = await get_auth_manager().get_user_from_token(token)
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not get_auth_manager().is_authorized_custom_view(
+        method=request.method,
+        resource_name=RESOURCE_NAME,
+        user=user,
+    ):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
 
 DAGS_FOLDER = conf.get("core", "dags_folder")
 REACT_APP_DIR = conf.get("multirepo_deploy", "react_app_dir", fallback=Path(__file__).parent / "ui" / "dist")
@@ -193,7 +223,7 @@ app.mount(
 )
 
 
-@app.get("/api/repos", response_class=JSONResponse)
+@app.get("/api/repos", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def list_repos_api():
     repos = []
     for f in Path(DAGS_FOLDER).iterdir():
@@ -220,7 +250,7 @@ async def list_repos_api():
     return {"repos": repos}
 
 
-@app.get("/api/status/{folder:path}", response_class=JSONResponse)
+@app.get("/api/status/{folder:path}", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def repo_status_api(folder: str):
     repo_meta = _load_repo(Path(DAGS_FOLDER).joinpath(folder), folder)
     if not repo_meta:
@@ -262,7 +292,7 @@ async def repo_status_api(folder: str):
     }
 
 
-@app.post("/deploy/{folder:path}")
+@app.post("/deploy/{folder:path}", dependencies=[Depends(_check_auth)])
 async def deploy_repo(request: Request, folder: str, branches: str = Form(...)):
     repo = Repo(path=Path(DAGS_FOLDER).joinpath(folder))
     new_branch = branches
@@ -356,7 +386,7 @@ def _get_github_app_token():
     return token
 
 
-@app.get("/api/repos/github-available", response_class=JSONResponse)
+@app.get("/api/repos/github-available", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def github_available():
     """Check if GitHub App authentication is configured"""
     is_available = all([GH_APP_ID, GH_APP_PRIVATE_KEY, GH_APP_INSTALLATION_ID])
@@ -374,7 +404,7 @@ async def github_available():
     }
 
 
-@app.get("/api/repos/github-list", response_class=JSONResponse)
+@app.get("/api/repos/github-list", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def list_github_repos():
     """List GitHub repos accessible to the app that aren't already cloned"""
     try:
@@ -453,7 +483,7 @@ async def list_github_repos():
         return JSONResponse({"error": f"Unexpected error: {str(exc)}"}, status_code=500)
 
 
-@app.post("/api/repos/add-ssh", response_class=JSONResponse)
+@app.post("/api/repos/add-ssh", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def add_repo_ssh(
     repo_url: str = Form(...),
     folder_name: str = Form(...),
@@ -492,7 +522,7 @@ async def add_repo_ssh(
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
-@app.post("/api/repos/add-github", response_class=JSONResponse)
+@app.post("/api/repos/add-github", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def add_repo_github(repo_full_name: str = Form(...), folder_name: str = Form(...)):
     """Add a repository using GitHub App authentication"""
     folder_path = None
@@ -533,7 +563,7 @@ async def add_repo_github(repo_full_name: str = Form(...), folder_name: str = Fo
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
-@app.post("/api/cleanup-branches/{folder:path}", response_class=JSONResponse)
+@app.post("/api/cleanup-branches/{folder:path}", response_class=JSONResponse, dependencies=[Depends(_check_auth)])
 async def cleanup_branches(folder: str):
     """Remove all local branches except the currently active one"""
     try:
