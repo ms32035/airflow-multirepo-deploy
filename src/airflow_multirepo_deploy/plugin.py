@@ -34,17 +34,24 @@ async def _check_auth(request: Request):
     # User may already be resolved by Airflow's JWTRefreshMiddleware (cookie auth)
     user = getattr(request.state, "user", None)
 
+    auth_manager = get_auth_manager()
+
     if user is None:
         # Fall back to Bearer token (header-based auth)
-        token = (request.headers.get("Authorization", "")).removeprefix("Bearer ")
-        if not token:
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        try:
-            user = await get_auth_manager().get_user_from_token(token)
-        except Exception:
-            raise HTTPException(status_code=401, detail="Invalid token")
+        auth_header = request.headers.get("Authorization", "")
+        scheme, _, token = auth_header.partition(" ")
+        token = token.strip()
 
-    if not get_auth_manager().is_authorized_custom_view(
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(
+                status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"}
+            )
+        try:
+            user = await auth_manager.get_user_from_token(token)
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
+
+    if not auth_manager.is_authorized_custom_view(
         method=request.method,
         resource_name=RESOURCE_NAME,
         user=user,
