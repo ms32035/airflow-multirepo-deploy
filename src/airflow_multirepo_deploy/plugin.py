@@ -43,9 +43,7 @@ async def _check_auth(request: Request):
         token = token.strip()
 
         if scheme.lower() != "bearer" or not token:
-            raise HTTPException(
-                status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"}
-            )
+            raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"})
         try:
             user = await auth_manager.get_user_from_token(token)
         except jwt.InvalidTokenError:
